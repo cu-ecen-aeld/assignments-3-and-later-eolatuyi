@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # assignment 1
 # Description:
 #     Write a shell script finder-app/finder.sh as described below:

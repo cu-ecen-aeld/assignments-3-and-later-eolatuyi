@@ -6,13 +6,14 @@ set -e
 set -u
 
 OUTDIR=/tmp/aeld
-KERNEL_REPO=https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
+KERNEL_REPO=git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
 KERNEL_VERSION=v5.1.10
 BUSYBOX_VERSION=1_33_1
 FINDER_APP_DIR=$(realpath $(dirname $0))
 ASSIGNMENT_REPO_DIR=$(realpath $(dirname $FINDER_APP_DIR))
 ARCH=arm64
 CROSS_COMPILE=aarch64-none-linux-gnu-
+SYSROOT=$(${CROSS_COMPILE}gcc -print-sysroot)
 
 if [ $# -lt 1 ]
 then
@@ -29,7 +30,6 @@ if [ ! -d "${OUTDIR}/linux-stable" ]; then
     #Clone only if the repository does not exist.
 	echo "CLONING GIT LINUX STABLE VERSION ${KERNEL_VERSION} IN ${OUTDIR}"
 	git clone ${KERNEL_REPO} --depth 1 --single-branch --branch ${KERNEL_VERSION}
-    mv linux/ linux-stable
 fi
 
 if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
@@ -77,7 +77,7 @@ mkdir -p var/log
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
 then
-git clone https://git.busybox.net/busybox
+git clone git://busybox.net/busybox.git
     cd busybox
     git checkout ${BUSYBOX_VERSION}
     # TODO:  Configure busybox
@@ -99,32 +99,20 @@ ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
-# found program interpreter in cross compiler sysroot: 
-# /home/olatuyi/arm-cross-compiler/gcc-arm-10.2-2020.11-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib
-# found shared lib in 
-# /home/olatuyi/arm-cross-compiler/gcc-arm-10.2-2020.11-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64
-# manually moved dependencies into repo root 
-cp -r ${ASSIGNMENT_REPO_DIR}/Arm64_Lib_Dependencies/lib64/* ${OUTDIR}/rootfs/lib64
-cp -r ${ASSIGNMENT_REPO_DIR}/Arm64_Lib_Dependencies/lib/* ${OUTDIR}/rootfs/lib
+# Copying ld-linux-aarch64.so.1 to the specified directory
+# The find command searches for ld-linux-aarch64.so.1 within the specified $SYSROOT directory
+# The result is passed to extract the value, and then the cp command is used to copy it to "${OUTDIR}/rootfs/lib"
+cp $(find $SYSROOT -name ld-linux-aarch64.so.1) "${OUTDIR}/rootfs/lib"
+# Copying libm.so.6, libresolv.so.2, and libc.so.6 to the specified directory
+# The find command is used to locate libm.so.6, libresolv.so.2, and libc.so.6 within the $SYSROOT directory
+# The results are passed to the cp command to copy these libraries to "${OUTDIR}/rootfs/lib64"
+cp $(find $SYSROOT -name libm.so.6) $(find $SYSROOT -name libresolv.so.2) $(find $SYSROOT -name libc.so.6) "${OUTDIR}/rootfs/lib64"
+
 
 # TODO: Make device nodes with character type
-# null device
-
-# make null device if it doesn't exist
-# if [ ! -e dev/null ]; then
-#     if [ ! -e "./dev" ] && [ ! -d "./dev" ]; then
-#         echo "Making dev directory in rootfs"
-#         mkdir ./dev
-#     fi
-#     sudo mknod -m 666 dev/null c 1 3
-# fi
-# # make console device if it doesn't exist
-# if [ ! -e dev/console ]; then
-#     sudo mknod -m 666 dev/console c 5 1
-# fi
+rm -f console
 sudo mknod -m 666 dev/null c 1 3
-sudo mknod -m 666 dev/console c 5 1
-
+sudo mknod -m 600 dev/tty c 5 1
 
 # TODO: Clean and build the writer utility
 cd ${FINDER_APP_DIR}
@@ -153,3 +141,5 @@ sudo chown -R root:root ${OUTDIR}/rootfs
 cd ${OUTDIR}/rootfs
 find . | cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
 gzip -f  ${OUTDIR}/initramfs.cpio
+
+echo "Build done!"
